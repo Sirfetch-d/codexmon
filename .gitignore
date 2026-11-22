@@ -1,0 +1,17 @@
+# local codex / monitor runtime artifacts
+.alma-snapshots/
+tmp/
+work/
+outputs/
+
+# python
+__pycache__/
+*.pyc
+
+# secrets
+.env
+.env.local
+.env.*.local
+
+# macOS
+.DS_Store

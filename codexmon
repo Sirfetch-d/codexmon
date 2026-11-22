@@ -1,0 +1,72 @@
+#!/usr/bin/env python3
+"""codexmon — live TUI for codex threads, subagents and plan quotas."""
+
+import argparse
+import os
+import signal
+import sys
+
+HERE = os.path.dirname(os.path.abspath(__file__))
+if HERE not in sys.path:
+    sys.path.insert(0, HERE)
+
+from codexmon_lib import render  # noqa: E402
+from codexmon_lib.collect import Collector  # noqa: E402
+
+
+def build_parser():
+    p = argparse.ArgumentParser(
+        prog="codexmon",
+        description="Live terminal monitor for codex agents, subagents and plan usage.",
+    )
+    p.add_argument("--once", action="store_true", help="print one static frame and exit")
+    p.add_argument("--json", action="store_true", help="print the snapshot as JSON and exit")
+    p.add_argument("--interval", type=float, default=2.0, help="refresh interval in seconds (default 2)")
+    p.add_argument("--window", type=float, default=12.0, help="lookback window in hours (default 12)")
+    p.add_argument("--no-usage", action="store_true", help="do not hit the network for quotas")
+    p.add_argument("--homes", default="", help="comma separated CODEX_HOME list (default: auto)")
+    p.add_argument("--project-dir", default=HERE, help="directory holding .env with the opencode key")
+    p.add_argument("--width", type=int, default=118, help="width for --once output")
+    p.add_argument("--no-color", action="store_true", help="monochrome (TUI)")
+    return p
+
+
+def main(argv=None):
+    args = build_parser().parse_args(argv)
+    homes = [h.strip() for h in args.homes.split(",") if h.strip()]
+    collector = Collector(
+        homes=homes or None,
+        window_hours=args.window,
+        project_dir=args.project_dir,
+        net=not args.no_usage,
+    )
+
+    if args.json or args.once:
+        if not args.no_usage:
+            collector.sync_usage()
+        snap = collector.snapshot()
+        collector.stop()
+        if args.json:
+            print(render.to_json(snap))
+        else:
+            print(render.plain(snap, width=args.width))
+        return 0
+
+    from codexmon_lib.tui import App
+
+    def _term(signum, frame):
+        raise KeyboardInterrupt
+
+    signal.signal(signal.SIGTERM, _term)
+    app = App(collector, interval=max(0.3, args.interval), project_dir=args.project_dir)
+    try:
+        app.run()
+    except KeyboardInterrupt:
+        pass
+    finally:
+        collector.stop()
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())
